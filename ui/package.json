@@ -1,0 +1,13 @@
+{
+  "name": "stethoscope",
+  "version": "0.0.1",
+  "private": true,
+  "dependencies": {
+    "antd": "4.21.5",
+    "react": "17.0.1",
+    "react-dom": "17.0.1"
+  },
+  "devDependencies": {
+    "shadow-cljs": "2.19.5"
+  }
+}
