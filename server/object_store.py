@@ -6,16 +6,12 @@ from aiohttp import ClientSession
 from aiohttp.hdrs import CONTENT_LENGTH, CONTENT_TYPE
 from datetime import datetime, timedelta
 from oci.object_storage.models import CreatePreauthenticatedRequestDetails
-from pytube import YouTube, Stream as YoutubeStream
-from typing import Optional
+from pytube import Stream as YoutubeStream
+from typing import Dict, Optional
 
 
 BUCKET_NAME = "stethoscope"
-
-object_store = oci.object_storage.ObjectStorageClient(
-    oci.config.from_file("oci.conf")
-)
-bucket_namespace: str = object_store.get_namespace().data
+FIFTEEN_MIN = timedelta(minutes=15)
 
 
 class _FakeBuffer:
@@ -30,50 +26,70 @@ class _FakeBuffer:
         self.sync_q.put(data)
 
 
-async def _chunked_stream(stream: YoutubeStream):
-    queue = janus.Queue[Optional[bytes]](maxsize=5)
-    buffer = _FakeBuffer(queue.sync_q)
-    loop = asyncio.get_running_loop()
+class ObjectStore:
+    def __init__(self, oci_config: Dict[str, str]):
+        self.object_store = oci.object_storage.ObjectStorageClient(oci_config)
+        self.bucket_namespace: str = self.object_store.get_namespace().data
 
-    loop.run_in_executor(None, buffer.stream_to_buffer, stream)
+    async def save_audio(self, video_id: str, audio_stream: YoutubeStream):
+        loop = asyncio.get_running_loop()
 
-    while True:
-        chunk = await queue.async_q.get()
-        if chunk is None:
-            break
-        else:
-            yield chunk
-
-    queue.close()
-    await queue.wait_closed()
-
-
-async def save_audio_to_bucket(youtube: YouTube):
-    loop = asyncio.get_running_loop()
-
-    object_write_request = await loop.run_in_executor(
-        None,
-        object_store.create_preauthenticated_request,
-        bucket_namespace,
-        BUCKET_NAME,
-        CreatePreauthenticatedRequestDetails(
-            name=youtube.video_id,
-            object_name=youtube.video_id,
-            access_type=CreatePreauthenticatedRequestDetails.ACCESS_TYPE_OBJECT_WRITE,
-            time_expires=datetime.utcnow() + timedelta(minutes=15)
+        object_write_request = await loop.run_in_executor(
+            None,
+            self.object_store.create_preauthenticated_request,
+            self.bucket_namespace,
+            BUCKET_NAME,
+            CreatePreauthenticatedRequestDetails(
+                name=video_id,
+                object_name=video_id,
+                access_type=CreatePreauthenticatedRequestDetails.ACCESS_TYPE_OBJECT_WRITE,
+                time_expires=datetime.utcnow() + FIFTEEN_MIN
+            )
         )
-    )
-    object_write_url = object_store.base_client.endpoint + object_write_request.data.access_uri
-    audio_stream = await loop.run_in_executor(
-        None, lambda: youtube.streams.get_audio_only()
-    )
+        object_write_url = self.object_store.base_client.endpoint + object_write_request.data.access_uri
 
-    async with ClientSession() as http:
-        await http.put(
-            object_write_url,
-            data=_chunked_stream(audio_stream),
-            headers={
-                CONTENT_LENGTH: str(audio_stream.filesize),
-                CONTENT_TYPE: audio_stream.mime_type
-            }
+        async with ClientSession() as http:
+            await http.put(
+                object_write_url,
+                data=self._chunked_stream(audio_stream),
+                headers={
+                    CONTENT_LENGTH: str(audio_stream.filesize),
+                    CONTENT_TYPE: audio_stream.mime_type
+                }
+            )
+
+    async def get_audio_url(self, audio_id: str) -> str:
+        loop = asyncio.get_running_loop()
+
+        object_read_request = await loop.run_in_executor(
+            None,
+            self.object_store.create_preauthenticated_request,
+            self.bucket_namespace,
+            BUCKET_NAME,
+            CreatePreauthenticatedRequestDetails(
+                name=audio_id,
+                object_name=audio_id,
+                access_type=CreatePreauthenticatedRequestDetails.ACCESS_TYPE_OBJECT_READ,
+                time_expires=datetime.utcnow() + FIFTEEN_MIN
+            )
         )
+
+        return self.object_store.base_client.endpoint + object_read_request.data.access_uri
+
+    @staticmethod
+    async def _chunked_stream(stream: YoutubeStream):
+        queue = janus.Queue[Optional[bytes]](maxsize=5)
+        buffer = _FakeBuffer(queue.sync_q)
+        loop = asyncio.get_running_loop()
+
+        loop.run_in_executor(None, buffer.stream_to_buffer, stream)
+
+        while True:
+            chunk = await queue.async_q.get()
+            if chunk is None:
+                break
+            else:
+                yield chunk
+
+        queue.close()
+        await queue.wait_closed()

@@ -21,6 +21,8 @@ class Video(Base):
     published = Column(DateTime, nullable=False)
     duration = Column(Integer, nullable=False)
     thumbnail_url = Column(UnicodeText, nullable=True)
+    audio_size = Column(Integer, nullable=True, default=0)
+    audio_type = Column(Unicode(255), nullable=True)
 
 
 def create_session(user: str, password: str, dsn: str) -> sessionmaker:
