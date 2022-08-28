@@ -1,8 +1,10 @@
 (ns stethoscope.events
-  (:require [ajax.core :as ajax]
-            [re-frame.core :as rf]
+  (:require [re-frame.core :as rf]
             ;; loads effect handler
-            [day8.re-frame.http-fx]))
+            [day8.re-frame.fetch-fx]))
+
+(defonce ^:private json-response-type
+  {#"application/.*json" :json})
 
 (rf/reg-event-db
  :init
@@ -13,14 +15,14 @@
 
 (rf/reg-event-db
  :http-success
- (fn [db [_ kind resp]]
+ (fn [db [_ kind {body :body}]]
    (case kind
      :load-files-list (->
                        db
                        (assoc
                         :loading-files? false
-                        :next-file (:next-file resp))
-                       (update :files concat (:files resp)))
+                        :next-file (:next body))
+                       (update :files concat (:files body)))
      db)))
 
 (rf/reg-event-db
@@ -33,24 +35,24 @@
 (rf/reg-event-fx
  :load-files-list
  (fn [{db :db}]
-   {:http-xhrio {:method :get
-                 :uri "/files"
-                 :params {:next (:next-file db)}
-                 :response-format (ajax/json-response-format {:keywords? true})
-                 :on-success [:http-success :load-files-list]
-                 :on-failure [:http-error :load-files-list]}
+   {:fetch {:method :get
+            :url "/files"
+            :params {:next (:next-file db)}
+            :response-content-types json-response-type
+            :on-success [:http-success :load-files-list]
+            :on-failure [:http-error :load-files-list]}
     :db (assoc db :loading-files? true)}))
 
 (rf/reg-event-fx
  :queue-file
  (fn [_ [_ url]]
-   {:http-xhrio {:method :post
-                 :uri "/files"
-                 :params {:url url}
-                 :format (ajax/json-request-format)
-                 :response-format (ajax/json-response-format {:keywords? true})
-                 :on-success [:http-success :queue-file]
-                 :on-failure [:http-error :queue-file]}}))
+   {:fetch {:method :post
+            :url "/files"
+            :body {:url url}
+            :request-content-type :json
+            :response-content-types json-response-type
+            :on-success [:http-success :queue-file]
+            :on-failure [:http-error :queue-file]}}))
 
 ;; (rf/reg-event-fx
 ;;  :delete-file

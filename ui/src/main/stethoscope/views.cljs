@@ -7,21 +7,26 @@
 
 (defn list-files-comp []
   (letfn [(file-renderer [{:keys [title description thumbnail]}]
-            (let [avatar (r/create-element
+            (let [avatar-image (r/create-element
+                                antd/Image
+                                #js{:src thumbnail})
+                  avatar (r/create-element
                           antd/Avatar
-                          #js{:src thumbnail
+                          #js{:src avatar-image
                               :shape "square"
                               :size 150})
                   delete-button (r/create-element
                                  antd/Button
                                  #js{:icon (r/create-element icons/DeleteOutlined)
-                                     :onClick print})
-                  play-button (r/create-element
-                               antd/Button
-                               #js{:icon (r/create-element icons/PlayCircleOutlined)
-                                   :onClick print})]
+                                     :size "large"})
+                  confirm-delete (r/create-element
+                                  antd/Popconfirm
+                                  #js{:title "Are you sure to delete this video?"
+                                      :placement "left"
+                                      :onConfirm print}
+                                  delete-button)]
               (r/as-element
-               [:> antd/List.Item {:actions (array play-button delete-button)}
+               [:> antd/List.Item {:actions (array confirm-delete)}
                 [:> antd/List.Item.Meta {:title title
                                          :description description
                                          :avatar avatar}]])))
