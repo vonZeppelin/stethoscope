@@ -6,7 +6,7 @@
             [re-frame.core :as rf]))
 
 (defn list-files-comp []
-  (letfn [(file-renderer [{:keys [title description thumbnail]}]
+  (letfn [(file-renderer [{:keys [id title description thumbnail]}]
             (let [avatar-image (r/create-element
                                 antd/Image
                                 #js{:src thumbnail})
@@ -23,7 +23,8 @@
                                   antd/Popconfirm
                                   #js{:title "Are you sure to delete this video?"
                                       :placement "left"
-                                      :onConfirm print}
+                                      :onConfirm (fn [_]
+                                                   (rf/dispatch [:delete-file id]))}
                                   delete-button)]
               (r/as-element
                [:> antd/List.Item {:actions (array confirm-delete)}

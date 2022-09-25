@@ -47,6 +47,11 @@ class ObjectStore:
                 }
             )
 
+    async def delete_audio(self, video_id: str):
+        loop = asyncio.get_running_loop()
+
+        await loop.run_in_executor(None, self._delete_blob, video_id)
+
     async def get_audio_url(self, audio_id: str) -> str:
         loop = asyncio.get_running_loop()
 
@@ -81,3 +86,8 @@ class ObjectStore:
         return blob.generate_signed_url(
             method=method, version="v4", expiration=FIFTEEN_MIN
         )
+
+    def _delete_blob(self, name: str):
+        bucket: Bucket = self._object_store.bucket(BUCKET_NAME)
+        blob = bucket.blob(name)
+        blob.delete()

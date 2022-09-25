@@ -4,25 +4,22 @@ from aiohttp import web
 from datetime import timedelta, timezone
 from podgen import Podcast, Media
 from typing import Iterator
-from yarl import URL
 
 from firestore import Video
 from objectstore import ObjectStore
 
 
 class FeedView:
-    def __init__(self, object_store: ObjectStore):
+    def __init__(self, website: str, object_store: ObjectStore):
+        self.website = website
         self.object_store = object_store
 
     async def get_feed(self, request: web.Request) -> web.Response:
         def generate_rss_feed() -> str:
-            website_url = URL.build(
-                scheme=request.url.scheme, host=request.url.host
-            )
             podcast = Podcast(
                 name="Leonid's Stethoscope",
                 description="Podcast from Youtube videos",
-                website=str(website_url),
+                website=self.website,
                 explicit=False
             )
 

@@ -10,12 +10,14 @@ from objectstore import ObjectStore
 from view import FeedView, FilesView
 
 
+UI_HOST_URL = "https://stethoscope.lbogdanov.dev"
+
 gcloud_credentials = Credentials.from_service_account_file(
     "cloud-creds.json"
 )
 init_firestore(gcloud_credentials)
 object_store = ObjectStore(gcloud_credentials)
-feed_view = FeedView(object_store)
+feed_view = FeedView(UI_HOST_URL, object_store)
 files_view = FilesView(object_store)
 
 
@@ -26,7 +28,7 @@ async def healthcheck(_: web.Request) -> web.Response:
 async def build_app(ui_dir: Optional[str] = None):
     app = web.Application()
     cors_opts = {
-        "https://stethoscope.lbogdanov.dev": aiohttp_cors.ResourceOptions(
+        UI_HOST_URL: aiohttp_cors.ResourceOptions(
             allow_credentials=True, allow_headers="*", allow_methods="*"
         )
     }

@@ -1,6 +1,7 @@
 import asyncio
 
 from aiohttp import web
+from fireo.utils import utils
 from http import HTTPStatus
 from pytube import YouTube, Stream as YoutubeStream
 from typing import Dict, List
@@ -70,3 +71,16 @@ class FilesView:
 
     async def delete_file(self, request: web.Request) -> web.Response:
         file_id = request.match_info["file_id"]
+
+        loop = asyncio.get_running_loop()
+
+        await asyncio.gather(
+            self.object_store.delete_audio(file_id),
+            loop.run_in_executor(
+                None,
+                Video.collection.delete,
+                utils.generateKeyFromId(Video, file_id)
+            )
+        )
+
+        return web.Response()
