@@ -36,8 +36,9 @@
  :load-files-list
  (fn [{db :db}]
    {:fetch {:method :get
-            :url "/api/files"
+            :url "//api.stethoscope.lbogdanov.dev/files"
             :params {:next (:next-file db)}
+            :mode :cors
             :response-content-types json-response-type
             :on-success [:http-success :load-files-list]
             :on-failure [:http-error :load-files-list]}
@@ -47,8 +48,9 @@
  :queue-file
  (fn [_ [_ url]]
    {:fetch {:method :post
-            :url "/api/files"
+            :url "//api.stethoscope.lbogdanov.dev/"
             :body {:url url}
+            :mode :cors
             :request-content-type :json
             :response-content-types json-response-type
             :on-success [:http-success :queue-file]
