@@ -36,7 +36,7 @@
  :load-files-list
  (fn [{db :db}]
    {:fetch {:method :get
-            :url "/files"
+            :url "/api/files"
             :params {:next (:next-file db)}
             :response-content-types json-response-type
             :on-success [:http-success :load-files-list]
@@ -47,7 +47,7 @@
  :queue-file
  (fn [_ [_ url]]
    {:fetch {:method :post
-            :url "/files"
+            :url "/api/files"
             :body {:url url}
             :request-content-type :json
             :response-content-types json-response-type
@@ -58,7 +58,7 @@
 ;;  :delete-file
 ;;  (fn [_ [_ file-id]]
 ;;    {:http-xhrio {:method :delete
-;;                  :uri "/files/{file}"
+;;                  :uri "/api/files/{file}"
 ;;                  :params {:file file}
 ;;                  :format (ajax/json-request-format)
 ;;                  :response-format (ajax/json-response-format {:keywords? true})

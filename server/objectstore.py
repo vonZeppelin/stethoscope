@@ -1,16 +1,16 @@
 import asyncio
 import janus
-import oci
 
 from aiohttp import ClientSession
 from aiohttp.hdrs import CONTENT_LENGTH, CONTENT_TYPE
-from datetime import datetime, timedelta
-from oci.object_storage.models import CreatePreauthenticatedRequestDetails
+from datetime import timedelta
+from google.cloud.storage import Client, Bucket
+from google.oauth2.service_account import Credentials
 from pytube import Stream as YoutubeStream
-from typing import Dict, Optional
+from typing import Optional
 
 
-BUCKET_NAME = "stethoscope"
+BUCKET_NAME = "stethoscope-2022"
 FIFTEEN_MIN = timedelta(minutes=15)
 
 
@@ -27,26 +27,15 @@ class _FakeBuffer:
 
 
 class ObjectStore:
-    def __init__(self, oci_config: Dict[str, str]):
-        self.object_store = oci.object_storage.ObjectStorageClient(oci_config)
-        self.bucket_namespace: str = self.object_store.get_namespace().data
+    def __init__(self, credentials: Credentials):
+        self._object_store = Client(credentials=credentials)
 
     async def save_audio(self, video_id: str, audio_stream: YoutubeStream):
         loop = asyncio.get_running_loop()
 
-        object_write_request = await loop.run_in_executor(
-            None,
-            self.object_store.create_preauthenticated_request,
-            self.bucket_namespace,
-            BUCKET_NAME,
-            CreatePreauthenticatedRequestDetails(
-                name=video_id,
-                object_name=video_id,
-                access_type=CreatePreauthenticatedRequestDetails.ACCESS_TYPE_OBJECT_WRITE,
-                time_expires=datetime.utcnow() + FIFTEEN_MIN
-            )
+        object_write_url = await loop.run_in_executor(
+            None, self._get_presign_url, video_id, "PUT"
         )
-        object_write_url = self.object_store.base_client.endpoint + object_write_request.data.access_uri
 
         async with ClientSession() as http:
             await http.put(
@@ -61,20 +50,11 @@ class ObjectStore:
     async def get_audio_url(self, audio_id: str) -> str:
         loop = asyncio.get_running_loop()
 
-        object_read_request = await loop.run_in_executor(
-            None,
-            self.object_store.create_preauthenticated_request,
-            self.bucket_namespace,
-            BUCKET_NAME,
-            CreatePreauthenticatedRequestDetails(
-                name=audio_id,
-                object_name=audio_id,
-                access_type=CreatePreauthenticatedRequestDetails.ACCESS_TYPE_OBJECT_READ,
-                time_expires=datetime.utcnow() + FIFTEEN_MIN
-            )
+        object_read_url = await loop.run_in_executor(
+            None, self._get_presign_url, audio_id, "GET"
         )
 
-        return self.object_store.base_client.endpoint + object_read_request.data.access_uri
+        return object_read_url
 
     @staticmethod
     async def _chunked_stream(stream: YoutubeStream):
@@ -93,3 +73,11 @@ class ObjectStore:
 
         queue.close()
         await queue.wait_closed()
+
+    def _get_presign_url(self, name: str, method: str) -> str:
+        bucket: Bucket = self._object_store.bucket(BUCKET_NAME)
+        blob = bucket.blob(name)
+
+        return blob.generate_signed_url(
+            method=method, version="v4", expiration=FIFTEEN_MIN
+        )

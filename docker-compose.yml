@@ -15,4 +15,4 @@ services:
       context: .
       dockerfile: deploy/Dockerfile-backend
     volumes:
-      - ${OCI_CONF_PATH}:/app/oci/:ro
+      - ${CLOUD_CONF}:/app/cloud-creds.json:ro

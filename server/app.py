@@ -1,36 +1,41 @@
 import sys
-import oci
 
 from aiohttp import web
+from google.oauth2.service_account import Credentials
 from typing import Optional
 
-from db import create_session
-from object_store import ObjectStore
+from firestore import init_firestore
+from objectstore import ObjectStore
 from view import FeedView, FilesView
 
 
-oci_config = oci.config.from_file("oci/oci.conf")
-db_session = create_session(
-    oci_config["db_user"],
-    oci_config["db_password"],
-    oci_config["db_dsn"]
+gcloud_credentials = Credentials.from_service_account_file(
+    "cloud-creds.json"
 )
-object_store = ObjectStore(oci_config)
-feed_view = FeedView(db_session, object_store)
-files_view = FilesView(db_session, object_store)
+init_firestore(gcloud_credentials)
+object_store = ObjectStore(gcloud_credentials)
+feed_view = FeedView(object_store)
+files_view = FilesView(object_store)
+
+
+async def healthcheck(_: web.Request) -> web.Response:
+    return web.Response(text="OK")
 
 
 async def build_app(ui_dir: Optional[str] = None):
     app = web.Application()
-
-    app.router.add_get("/feed", feed_view.get_feed)
-    app.router.add_get("/feed/{episode_id}", feed_view.get_media_link)
-    app.router.add_get("/files", files_view.list_files)
-    app.router.add_post("/files", files_view.add_file)
-    app.router.add_delete("/files/{file_id}", files_view.delete_file)
-
+    app.add_routes(
+        [
+            web.get("/api/files", files_view.list_files),
+            web.post("/api/files", files_view.add_file),
+            web.delete("/api/files/{file_id}", files_view.delete_file),
+            web.get("/api/feed", feed_view.get_feed),
+            web.get("/api/feed/{episode_id}", feed_view.get_media_link),
+            web.get("/api/health", healthcheck)
+        ]
+    )
     if ui_dir:
-        app.router.add_static("/", ui_dir)
+        app.add_routes([web.static("/", ui_dir)])
 
     return app
 

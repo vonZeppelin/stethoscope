@@ -5,4 +5,7 @@ COPY server .
 
 RUN pip install --no-cache-dir -r requirements.txt
 
-ENTRYPOINT ["gunicorn" "-b:8080" "-kaiohttp.GunicornWebWorker" "app:build_app"]
+ENTRYPOINT ["gunicorn", \
+            "--bind=8080", \
+            "--worker-class=aiohttp.GunicornWebWorker", \
+            "app:build_app"]
