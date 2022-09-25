@@ -1,3 +1,4 @@
+import aiohttp_cors
 import sys
 
 from aiohttp import web
@@ -24,18 +25,32 @@ async def healthcheck(_: web.Request) -> web.Response:
 
 async def build_app(ui_dir: Optional[str] = None):
     app = web.Application()
-    app.add_routes(
-        [
-            web.get("/api/files", files_view.list_files),
-            web.post("/api/files", files_view.add_file),
-            web.delete("/api/files/{file_id}", files_view.delete_file),
-            web.get("/api/feed", feed_view.get_feed),
-            web.get("/api/feed/{episode_id}", feed_view.get_media_link),
-            web.get("/api/health", healthcheck)
-        ]
+    cors_opts = {
+        "https://stethoscope.lbogdanov.dev": aiohttp_cors.ResourceOptions(
+            allow_credentials=True, allow_headers="*", allow_methods="*"
+        )
+    }
+    cors = aiohttp_cors.setup(app)
+
+    cors.add(
+        app.router.add_get("/files", files_view.list_files),
+        cors_opts
     )
+    cors.add(
+        app.router.add_post("/files", files_view.add_file),
+        cors_opts
+    )
+    cors.add(
+        app.router.add_delete("/files/{file_id}", files_view.delete_file),
+        cors_opts
+    )
+
+    app.router.add_get("/feed", feed_view.get_feed)
+    app.router.add_get("/feed/{episode_id}", feed_view.get_media_link)
+    app.router.add_get("/health", healthcheck)
+
     if ui_dir:
-        app.add_routes([web.static("/", ui_dir)])
+        app.router.add_static("/", ui_dir)
 
     return app
 
