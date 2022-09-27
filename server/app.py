@@ -5,6 +5,7 @@ from aiohttp import web
 from google.oauth2.service_account import Credentials
 from typing import Optional
 
+from basicauth import basic_auth_middleware
 from firestore import init_firestore
 from objectstore import ObjectStore
 from view import FeedView, FilesView
@@ -26,10 +27,20 @@ async def healthcheck(_: web.Request) -> web.Response:
 
 
 async def build_app(ui_dir: Optional[str] = None):
-    app = web.Application()
+    app = web.Application(
+        middlewares=[
+            basic_auth_middleware(
+                ["/files"],
+                {"tbd": "tbd"}
+            )
+        ]
+    )
+
     cors_opts = {
         UI_HOST_URL: aiohttp_cors.ResourceOptions(
-            allow_credentials=True, allow_headers="*", allow_methods="*"
+            allow_credentials=True,
+            allow_headers="*",
+            allow_methods="*"
         )
     }
     cors = aiohttp_cors.setup(app)

@@ -2,7 +2,7 @@ aiohttp==3.8.1
 aiohttp_cors==0.7.0
 fireo==1.5.1
 google-cloud-storage==2.5.0
-gunicorn==20.1.0 
+gunicorn==20.1.0
 janus==1.0.0
 podgen==1.1.0
 pytube==12.1.0
