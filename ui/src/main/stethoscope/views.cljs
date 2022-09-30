@@ -21,7 +21,7 @@
                                      :size "large"})
                   confirm-delete (r/create-element
                                   antd/Popconfirm
-                                  #js{:title "Are you sure to delete this video?"
+                                  #js{:title "Delete this video?"
                                       :placement "left"
                                       :onConfirm (fn [_]
                                                    (rf/dispatch [:delete-file id]))}
@@ -29,19 +29,25 @@
               (r/as-element
                [:> antd/List.Item {:actions (array confirm-delete)}
                 [:> antd/List.Item.Meta {:title title
-                                         :description description
-                                         :avatar avatar}]])))
-          (file-id [file]
-            (:id file))]
-    [:> antd/List {:dataSource (to-array @(rf/subscribe [:files]))
+                                         :description (r/create-element
+                                                       antd/Typography.Paragraph
+                                                       (clj->js {:ellipsis {:expandable true
+                                                                            :rows 3
+                                                                            :symbol "more"}
+                                                                 :style {:whiteSpace "pre-wrap"}})
+                                                       description)
+                                         :avatar avatar}]])))]
+    [:> antd/List {:bordered true
+                   :dataSource (to-array @(rf/subscribe [:files]))
                    :loading @(rf/subscribe [:loading-files?])
                    :renderItem file-renderer
-                   :rowKey file-id}]))
+                   :rowKey :id}]))
 
 (defn queue-file-comp []
   (let [[form] (antd/Form.useForm)]
     [:> antd/Form {:form form
                    :name "queue-file"
+                   :layout "inline"
                    :onFinish (fn [fields]
                                (form.resetFields)
                                (rf/dispatch [:queue-file fields.link]))}
@@ -57,9 +63,17 @@
        "Download"]]]))
 
 (defn ui []
-  [:<>
-   [:f> queue-file-comp]
-   [list-files-comp]])
+  [:> antd/Layout
+   [:> antd/Layout.Header]
+   [:> antd/Layout.Content
+    [:> antd/Row
+     [:> antd/Col {:offset 5 :span 14}
+      [:f> queue-file-comp]]]
+    [:> antd/Row
+     [:> antd/Col {:offset 5 :span 14}
+      [list-files-comp]]]]
+   [:> antd/Layout.Footer {:style {:textAlign "center"}}
+    "2022 Stethoscope"]])
 
 (defn render []
   (rdom/render
