@@ -7,36 +7,33 @@
 
 (defn list-files-comp []
   (letfn [(file-renderer [{:keys [id title description thumbnail]}]
-            (let [avatar-image (r/create-element
-                                antd/Image
-                                #js{:src thumbnail})
+            (let [avatar-width 150
                   avatar (r/create-element
-                          antd/Avatar
-                          #js{:src avatar-image
-                              :shape "square"
-                              :size 150})
-                  delete-button (r/create-element
-                                 antd/Button
-                                 #js{:icon (r/create-element icons/DeleteOutlined)
-                                     :size "large"})
-                  confirm-delete (r/create-element
-                                  antd/Popconfirm
-                                  #js{:title "Delete this video?"
-                                      :placement "left"
-                                      :onConfirm (fn [_]
-                                                   (rf/dispatch [:delete-file id]))}
-                                  delete-button)]
+                          antd/Image
+                          #js{:src thumbnail 
+                              :width avatar-width})
+                  confirm-delete (r/as-element
+                                  [:> antd/Popconfirm {:title "Delete this video?"
+                                                       :placement "left"
+                                                       :onConfirm #(rf/dispatch [:delete-file id])}
+                                   [:> antd/Button {:icon (r/create-element icons/DeleteOutlined)
+                                                    :size "large"}]])]
               (r/as-element
                [:> antd/List.Item {:actions (array confirm-delete)}
-                [:> antd/List.Item.Meta {:title title
-                                         :description (r/create-element
-                                                       antd/Typography.Paragraph
-                                                       (clj->js {:ellipsis {:expandable true
-                                                                            :rows 3
-                                                                            :symbol "more"}
-                                                                 :style {:whiteSpace "pre-wrap"}})
-                                                       description)
-                                         :avatar avatar}]])))]
+                ;; fully downloaded item has a non-blank title
+                (if title
+                  [:> antd/List.Item.Meta {:avatar avatar
+                                           :title title
+                                           :description (r/create-element
+                                                         antd/Typography.Paragraph
+                                                         (clj->js {:ellipsis {:expandable true
+                                                                              :rows 3
+                                                                              :symbol "more"}
+                                                                   :style {:whiteSpace "pre-wrap"}})
+                                                         description)}]
+                  [:> antd/Skeleton {:active true
+                                     :avatar {:shape "square"
+                                              :size avatar-width}}])])))]
     [:> antd/List {:bordered true
                    :dataSource (to-array @(rf/subscribe [:files]))
                    :loading @(rf/subscribe [:loading-files?])

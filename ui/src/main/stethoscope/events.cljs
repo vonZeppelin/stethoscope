@@ -22,17 +22,16 @@
  (fn [db [_ kind & rest]]
    (case kind
      :load-files-list (let [[{body :body}] rest]
-                        (->
-                         db
-                         (assoc
-                          :loading-files? false
-                          :next-file (:next body))
-                         (update :files concat (:files body))))
-     :delete-file (let [[file-id] rest]
-                    (update db :files (fn [files]
-                                        (remove
-                                         #(= file-id (:id %))
-                                         files))))
+                        (-> db
+                            (assoc :loading-files? false
+                                   :next-file (:next body))
+                            (update :files concat (:files body))))
+     :queue-file (let [[{body :body}] rest]
+                   (update db :files into [body]))
+     :delete-file (let [[deleted-file-id] rest
+                        deleted-file? (fn [{file-id :id}]
+                                        (= deleted-file-id file-id))]
+                    (update db :files (partial remove deleted-file?)))
      db)))
 
 (rf/reg-event-db
