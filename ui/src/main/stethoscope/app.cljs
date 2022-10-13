@@ -10,5 +10,5 @@
 
 (defn main []
   (rf/dispatch-sync [:init])
-  (rf/dispatch [:load-files-list])
+  (rf/dispatch [:load-files])
   (render))

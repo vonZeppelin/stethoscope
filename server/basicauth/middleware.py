@@ -30,7 +30,7 @@ def basic_auth_middleware(
 def _check_access(
         auth_dict: Dict[str, str],
         auth_header: str,
-        hash_strategy: Callable[[str], str] = lambda x: x
+        hash_strategy: Callable[[str], str]
 ) -> bool:
     try:
         creds = BasicAuth.decode(auth_header)

@@ -3,7 +3,7 @@ import asyncio
 from aiohttp import web
 from fireo.utils import utils
 from http import HTTPStatus
-from pytube import YouTube, Stream as YoutubeStream
+from pytube import YouTube
 from typing import Dict, List
 
 from firestore import Video
@@ -15,8 +15,19 @@ class FilesView:
         self.object_store = object_store
 
     async def list_files(self, request: web.Request) -> web.Response:
-        def list_videos(next: str) -> List[Dict]:
-            query = Video.collection.order("-published").fetch(5)
+        # TODO handle next
+        def list_videos() -> List[Dict]:
+            video_ids = request.query.getall("id", [])
+            if video_ids:
+                videos = Video.collection.get_all(
+                    map(
+                        lambda v_id: utils.generateKeyFromId(Video, v_id),
+                        video_ids
+                    )
+                )
+            else:
+                videos = Video.collection.order("-published").fetch(5)
+
             return [
                 {
                     "id": v.id,
@@ -25,18 +36,18 @@ class FilesView:
                     "thumbnail": v.thumbnail_url,
                     "duration": v.duration
                 }
-                for v in query
+                for v in videos if v
             ]
 
         loop = asyncio.get_running_loop()
-        videos = await loop.run_in_executor(
-            None, list_videos, request.query.get("next")
-        )
-        return web.json_response({"files": videos, "next": None})
+        files = await loop.run_in_executor(None, list_videos)
+        return web.json_response({"files": files, "next": None})
 
     async def add_file(self, request: web.Request) -> web.Response:
-        def save_audio_to_db(yt: YouTube) -> YoutubeStream:
-            audio = yt.streams.get_audio_only()
+        loop = asyncio.get_running_loop()
+
+        async def save_audio(yt: YouTube):
+            filesize, mime_type = await self.object_store.save_audio(yt)
 
             video = Video(
                 id=yt.video_id,
@@ -45,35 +56,24 @@ class FilesView:
                 published=yt.publish_date,
                 duration=yt.length,
                 thumbnail_url=yt.thumbnail_url,
-                audio_size=audio.filesize,
-                audio_type=audio.mime_type
+                audio_size=filesize,
+                audio_type=mime_type
             )
-            video.save()
+            await loop.run_in_executor(None, video.save)
 
-            return audio
-
-        loop = asyncio.get_running_loop()
         youtube = YouTube(
             (await request.json())["url"]
         )
-
-        audio_stream = await loop.run_in_executor(
-            None, save_audio_to_db, youtube
-        )
-        loop.create_task(
-            self.object_store.save_audio(youtube.video_id, audio_stream)
-        )
-
+        loop.create_task(save_audio(youtube))
         return web.json_response(
             {"id": youtube.video_id},
             status=HTTPStatus.ACCEPTED
         )
 
     async def delete_file(self, request: web.Request) -> web.Response:
-        file_id = request.match_info["file_id"]
-
         loop = asyncio.get_running_loop()
 
+        file_id = request.match_info["file_id"]
         await asyncio.gather(
             self.object_store.delete_audio(file_id),
             loop.run_in_executor(
@@ -82,5 +82,4 @@ class FilesView:
                 utils.generateKeyFromId(Video, file_id)
             )
         )
-
-        return web.Response()
+        return web.json_response({"id": file_id})

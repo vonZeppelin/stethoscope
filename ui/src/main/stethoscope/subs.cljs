@@ -4,7 +4,7 @@
 (rf/reg-sub
  :files
  (fn [db _]
-   (:files db)))
+   (vals (:files db))))
 
 (rf/reg-sub
  :loading-files?

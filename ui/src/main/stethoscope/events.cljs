@@ -1,8 +1,9 @@
 (ns stethoscope.events
   (:require [lambdaisland.uri :refer [join uri]]
             [re-frame.core :as rf]
-            ;; loads effect handler
-            [day8.re-frame.fetch-fx]))
+            ;; load effect handlers
+            [day8.re-frame.fetch-fx]
+            [stethoscope.effects]))
 
 (defonce ^:private api-host
   (uri "//api.stethoscope.lbogdanov.dev/"))
@@ -13,45 +14,63 @@
 (rf/reg-event-db
  :init
  (fn [_ _]
-   {:files []
+   {:files {}
+    :queue #{}
     :next-file ""
     :loading-files? false}))
-
-(rf/reg-event-db
- :http-success
- (fn [db [_ kind & rest]]
-   (case kind
-     :load-files-list (let [[{body :body}] rest]
-                        (-> db
-                            (assoc :loading-files? false
-                                   :next-file (:next body))
-                            (update :files concat (:files body))))
-     :queue-file (let [[{body :body}] rest]
-                   (update db :files into [body]))
-     :delete-file (let [[deleted-file-id] rest
-                        deleted-file? (fn [{file-id :id}]
-                                        (= deleted-file-id file-id))]
-                    (update db :files (partial remove deleted-file?)))
-     db)))
 
 (rf/reg-event-db
  :http-error
  (fn [db [_ kind]]
    (case kind
-     :load-files-list (assoc db :loading-files? false)
+     :files-loaded (assoc db :loading-files? false)
      db)))
 
 (rf/reg-event-fx
- :load-files-list
+ :http-success
+ (fn [{db :db} [_ kind & rest]]
+   (case kind
+     :files-loaded (let [[{body :body}] rest
+                         files (:files body)
+                         next-file (:next body)]
+                     {:db (-> db
+                              (assoc :loading-files? false
+                                     :next-file next-file)
+                              (update :files merge (zipmap
+                                                    (map :id files)
+                                                    files)))})
+     :file-queued (let [[{file :body}] rest
+                        file-id (:id file)]
+                    {:db (-> db
+                             (update :files (partial merge {file-id file}))
+                             (update :queue conj file-id))
+                     :timeout {:event :poll-queue}})
+     :queue-polled (let [[{body :body}] rest
+                         files (:files body)
+                         update-db (fn [db {file-id :id :as file}]
+                                     (-> db
+                                         (update :files assoc file-id file)
+                                         (update :queue disj file-id)))
+                         db (reduce update-db db files)]
+                     (if (empty? (:queue db))
+                       {:db db}
+                       {:db db :timeout {:event :poll-queue :timeout 2.5}}))
+     :file-deleted (let [[{file :body}] rest
+                         file-id (:id file)]
+                     {:db (update db :files dissoc file-id)})
+     {:db db})))
+
+(rf/reg-event-fx
+ :load-files
  (fn [{db :db}]
-   {:fetch {:method :get
+   {:db (assoc db :loading-files? true)
+    :fetch {:method :get
             :url (join api-host "files")
             :params {:next (:next-file db)}
             :mode :cors
             :response-content-types json-response-type
-            :on-success [:http-success :load-files-list]
-            :on-failure [:http-error :load-files-list]}
-    :db (assoc db :loading-files? true)}))
+            :on-success [:http-success :files-loaded]
+            :on-failure [:http-error :files-loaded]}}))
 
 (rf/reg-event-fx
  :queue-file
@@ -62,8 +81,20 @@
             :mode :cors
             :request-content-type :json
             :response-content-types json-response-type
-            :on-success [:http-success :queue-file]
-            :on-failure [:http-error :queue-file]}}))
+            :on-success [:http-success :file-queued]
+            :on-failure [:http-error :file-queued]}}))
+
+(rf/reg-event-fx
+ :poll-queue
+ (fn [{db :db}]
+   {:fetch {:method :get
+            :url (join api-host "files")
+            :params {:id (to-array (:queue db))}
+            :mode :cors
+            :request-content-type :json
+            :response-content-types json-response-type
+            :on-success [:http-success :queue-polled]
+            :on-failure [:http-error :queue-polled]}}))
 
 (rf/reg-event-fx
  :delete-file
@@ -73,5 +104,5 @@
             :mode :cors
             :request-content-type :json
             :response-content-types json-response-type
-            :on-success [:http-success :delete-file file-id]
-            :on-failure [:http-error :delete-file]}}))
+            :on-success [:http-success :file-deleted]
+            :on-failure [:http-error :file-deleted]}}))

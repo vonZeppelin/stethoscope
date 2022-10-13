@@ -1,4 +1,4 @@
-aiohttp==3.8.1
+aiohttp==3.8.3
 aiohttp_cors==0.7.0
 fireo==1.5.1
 google-cloud-storage==2.5.0

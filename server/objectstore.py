@@ -4,14 +4,15 @@ import janus
 from aiohttp import ClientSession
 from aiohttp.hdrs import CONTENT_LENGTH, CONTENT_TYPE
 from datetime import timedelta
+from google.cloud.exceptions import NotFound
 from google.cloud.storage import Client, Bucket
 from google.oauth2.service_account import Credentials
-from pytube import Stream as YoutubeStream
-from typing import Optional
+from pytube import Stream as YoutubeStream, YouTube
+from typing import Optional, Tuple
 
 
 BUCKET_NAME = "stethoscope-2022"
-FIFTEEN_MIN = timedelta(minutes=15)
+ONE_DAY = timedelta(days=1)
 
 
 class _FakeBuffer:
@@ -30,11 +31,14 @@ class ObjectStore:
     def __init__(self, credentials: Credentials):
         self._object_store = Client(credentials=credentials)
 
-    async def save_audio(self, video_id: str, audio_stream: YoutubeStream):
+    async def save_audio(self, yt: YouTube) -> Tuple[int, str]:
         loop = asyncio.get_running_loop()
 
+        audio_stream = await loop.run_in_executor(
+            None, lambda: yt.streams.get_audio_only()
+        )
         object_write_url = await loop.run_in_executor(
-            None, self._get_presign_url, video_id, "PUT"
+            None, self._get_presign_url, yt.video_id, "PUT"
         )
 
         async with ClientSession() as http:
@@ -46,6 +50,8 @@ class ObjectStore:
                     CONTENT_TYPE: audio_stream.mime_type
                 }
             )
+
+        return audio_stream.filesize, audio_stream.mime_type
 
     async def delete_audio(self, video_id: str):
         loop = asyncio.get_running_loop()
@@ -84,10 +90,13 @@ class ObjectStore:
         blob = bucket.blob(name)
 
         return blob.generate_signed_url(
-            method=method, version="v4", expiration=FIFTEEN_MIN
+            method=method, version="v4", expiration=ONE_DAY
         )
 
     def _delete_blob(self, name: str):
         bucket: Bucket = self._object_store.bucket(BUCKET_NAME)
         blob = bucket.blob(name)
-        blob.delete()
+        try:
+            blob.delete()
+        except NotFound:
+            pass

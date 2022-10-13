@@ -65,9 +65,7 @@
    [:> antd/Layout.Content
     [:> antd/Row
      [:> antd/Col {:offset 5 :span 14}
-      [:f> queue-file-comp]]]
-    [:> antd/Row
-     [:> antd/Col {:offset 5 :span 14}
+      [:f> queue-file-comp]
       [list-files-comp]]]]
    [:> antd/Layout.Footer {:style {:textAlign "center"}}
     "2022 Stethoscope"]])
