@@ -3,12 +3,12 @@
   "version": "0.0.1",
   "private": true,
   "dependencies": {
-    "@ant-design/icons": "4.7.0",
-    "antd": "4.23.5",
-    "react": "17.0.1",
-    "react-dom": "17.0.1"
+    "@ant-design/icons": "4.8.0",
+    "antd": "5.0.2",
+    "react": "17.0.2",
+    "react-dom": "17.0.2"
   },
   "devDependencies": {
-    "shadow-cljs": "2.20.3"
+    "shadow-cljs": "2.20.12"
   }
 }
