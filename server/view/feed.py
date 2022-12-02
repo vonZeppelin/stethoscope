@@ -23,7 +23,7 @@ class FeedView:
                 explicit=False
             )
 
-            query: Iterator[Video] = Video.collection.order("-published").fetch()
+            query: Iterator[Video] = Video.collection.order("-created").fetch()
             for v in query:
                 episode = podcast.add_episode()
                 episode.id = v.id

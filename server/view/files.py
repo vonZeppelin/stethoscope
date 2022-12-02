@@ -1,6 +1,7 @@
 import asyncio
 
 from aiohttp import web
+from datetime import datetime
 from fireo.utils import utils
 from http import HTTPStatus
 from pytube import YouTube
@@ -26,7 +27,7 @@ class FilesView:
                     )
                 )
             else:
-                videos = Video.collection.order("-published").fetch(5)
+                videos = Video.collection.order("-created").fetch(5)
 
             return [
                 {
@@ -53,6 +54,7 @@ class FilesView:
                 id=yt.video_id,
                 title=yt.title,
                 description=yt.description,
+                created=datetime.now(),
                 published=yt.publish_date,
                 duration=yt.length,
                 thumbnail_url=yt.thumbnail_url,
