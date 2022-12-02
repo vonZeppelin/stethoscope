@@ -3,12 +3,13 @@ import sys
 
 from aiohttp import web
 from google.oauth2.service_account import Credentials
-from typing import Optional
 
 from basicauth import basic_auth_middleware
 from firestore import init_firestore
 from objectstore import ObjectStore
 from view import FeedView, FilesView
+
+from typing import Optional
 
 
 UI_HOST_URL = "https://stethoscope.lbogdanov.dev"

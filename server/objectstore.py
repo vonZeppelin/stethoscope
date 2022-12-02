@@ -8,7 +8,8 @@ from google.cloud.exceptions import NotFound
 from google.cloud.storage import Client, Bucket
 from google.oauth2.service_account import Credentials
 from pytube import Stream as YoutubeStream, YouTube
-from typing import Optional, Tuple
+
+from typing import AsyncIterable, Optional, Tuple
 
 
 BUCKET_NAME = "stethoscope-2022"
@@ -17,14 +18,14 @@ ONE_DAY = timedelta(days=1)
 
 class _FakeBuffer:
     def __init__(self, sync_q: janus.SyncQueue[Optional[bytes]]):
-        self.sync_q = sync_q
+        self._sync_q = sync_q
 
     def stream_to_buffer(self, stream: YoutubeStream):
         stream.stream_to_buffer(self)
-        self.sync_q.put(None)
+        self._sync_q.put(None)
 
     def write(self, data: bytes):
-        self.sync_q.put(data)
+        self._sync_q.put(data)
 
 
 class ObjectStore:
@@ -32,13 +33,9 @@ class ObjectStore:
         self._object_store = Client(credentials=credentials)
 
     async def save_audio(self, yt: YouTube) -> Tuple[int, str]:
-        loop = asyncio.get_running_loop()
-
-        audio_stream = await loop.run_in_executor(
-            None, lambda: yt.streams.get_audio_only()
-        )
-        object_write_url = await loop.run_in_executor(
-            None, self._get_presign_url, yt.video_id, "PUT"
+        audio_stream, object_write_url = await asyncio.gather(
+            asyncio.to_thread(lambda: yt.streams.get_audio_only()),
+            asyncio.to_thread(self._get_presign_url, yt.video_id, "PUT")
         )
 
         async with ClientSession() as http:
@@ -54,34 +51,29 @@ class ObjectStore:
         return audio_stream.filesize, audio_stream.mime_type
 
     async def delete_audio(self, video_id: str):
-        loop = asyncio.get_running_loop()
-
-        await loop.run_in_executor(None, self._delete_blob, video_id)
+        await asyncio.to_thread(self._delete_blob, video_id)
 
     async def get_audio_url(self, audio_id: str) -> str:
-        loop = asyncio.get_running_loop()
-
-        object_read_url = await loop.run_in_executor(
-            None, self._get_presign_url, audio_id, "GET"
+        object_read_url = await asyncio.to_thread(
+            self._get_presign_url, audio_id, "GET"
         )
 
         return object_read_url
 
     @staticmethod
-    async def _chunked_stream(stream: YoutubeStream):
+    async def _chunked_stream(stream: YoutubeStream) -> AsyncIterable[bytes]:
         queue = janus.Queue[Optional[bytes]](maxsize=5)
         buffer = _FakeBuffer(queue.sync_q)
-        loop = asyncio.get_running_loop()
 
-        loop.run_in_executor(None, buffer.stream_to_buffer, stream)
+        # asyncio.to_thread is not working here for some reason
+        stream_to_buffer_task = asyncio.get_running_loop().run_in_executor(
+            None, buffer.stream_to_buffer, stream
+        )
 
-        while True:
-            chunk = await queue.async_q.get()
-            if chunk is None:
-                break
-            else:
-                yield chunk
+        while chunk := await queue.async_q.get():
+            yield chunk
 
+        await stream_to_buffer_task
         queue.close()
         await queue.wait_closed()
 

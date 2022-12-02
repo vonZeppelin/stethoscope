@@ -5,15 +5,16 @@ from datetime import datetime
 from fireo.utils import utils
 from http import HTTPStatus
 from pytube import YouTube
-from typing import Dict, List
 
 from firestore import Video
 from objectstore import ObjectStore
 
+from typing import Dict, List
+
 
 class FilesView:
     def __init__(self, object_store: ObjectStore):
-        self.object_store = object_store
+        self._object_store = object_store
 
     async def list_files(self, request: web.Request) -> web.Response:
         # TODO handle next
@@ -40,15 +41,12 @@ class FilesView:
                 for v in videos if v
             ]
 
-        loop = asyncio.get_running_loop()
-        files = await loop.run_in_executor(None, list_videos)
+        files = await asyncio.to_thread(list_videos)
         return web.json_response({"files": files, "next": None})
 
     async def add_file(self, request: web.Request) -> web.Response:
-        loop = asyncio.get_running_loop()
-
         async def save_audio(yt: YouTube):
-            filesize, mime_type = await self.object_store.save_audio(yt)
+            filesize, mime_type = await self._object_store.save_audio(yt)
 
             video = Video(
                 id=yt.video_id,
@@ -61,25 +59,22 @@ class FilesView:
                 audio_size=filesize,
                 audio_type=mime_type
             )
-            await loop.run_in_executor(None, video.save)
+            await asyncio.to_thread(video.save)
 
         youtube = YouTube(
             (await request.json())["url"]
         )
-        loop.create_task(save_audio(youtube))
+        asyncio.create_task(save_audio(youtube))
         return web.json_response(
             {"id": youtube.video_id},
             status=HTTPStatus.ACCEPTED
         )
 
     async def delete_file(self, request: web.Request) -> web.Response:
-        loop = asyncio.get_running_loop()
-
         file_id = request.match_info["file_id"]
         await asyncio.gather(
-            self.object_store.delete_audio(file_id),
-            loop.run_in_executor(
-                None,
+            self._object_store.delete_audio(file_id),
+            asyncio.to_thread(
                 Video.collection.delete,
                 utils.generateKeyFromId(Video, file_id)
             )
