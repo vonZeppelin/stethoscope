@@ -65,9 +65,8 @@ class ObjectStore:
         queue = janus.Queue[Optional[bytes]](maxsize=5)
         buffer = _FakeBuffer(queue.sync_q)
 
-        # asyncio.to_thread is not working here for some reason
-        stream_to_buffer_task = asyncio.get_running_loop().run_in_executor(
-            None, buffer.stream_to_buffer, stream
+        stream_to_buffer_task = asyncio.create_task(
+            asyncio.to_thread(buffer.stream_to_buffer, stream)
         )
 
         while chunk := await queue.async_q.get():
