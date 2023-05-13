@@ -6,7 +6,7 @@
             [stethoscope.effects]))
 
 (defonce ^:private api-host
-  (uri "//api.stethoscope.lbogdanov.dev/"))
+  (uri "//api-stethoscope.lbogdanov.dev/"))
 
 (defonce ^:private json-response-type
   {#"application/.*json" :json})
