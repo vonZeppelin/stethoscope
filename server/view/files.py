@@ -22,10 +22,10 @@ class FilesView:
             video_ids = request.query.getall("id", [])
             if video_ids:
                 videos = Video.collection.get_all(
-                    map(
-                        lambda v_id: utils.generateKeyFromId(Video, v_id),
-                        video_ids
-                    )
+                    [
+                        utils.get_key(Video.collection_name, v)
+                        for v in video_ids
+                    ]
                 )
             else:
                 videos = Video.collection.order("-created").fetch(5)
@@ -45,13 +45,13 @@ class FilesView:
         return web.json_response({"files": files, "next": None})
 
     async def add_file(self, request: web.Request) -> web.Response:
-        async def save_audio(yt: YouTube):
+        async def save_audio(yt: YouTube) -> None:
             filesize, mime_type = await self._object_store.save_audio(yt)
 
             video = Video(
                 id=yt.video_id,
                 title=yt.title,
-                description=yt.description,
+                description=yt.description or "",
                 created=datetime.now(),
                 published=yt.publish_date,
                 duration=yt.length,
@@ -76,7 +76,7 @@ class FilesView:
             self._object_store.delete_audio(file_id),
             asyncio.to_thread(
                 Video.collection.delete,
-                utils.generateKeyFromId(Video, file_id)
+                utils.get_key(Video.collection_name, file_id)
             )
         )
         return web.json_response({"id": file_id})
