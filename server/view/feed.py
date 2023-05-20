@@ -1,35 +1,42 @@
-import asyncio
+from datetime import timedelta, timezone
 import warnings
 
 from aiohttp import web
-from datetime import timedelta, timezone
 from podgen import Media, NotSupportedByItunesWarning, Podcast
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import async_sessionmaker
 
-from firestore import Video
+from db import Video
 from objectstore import ObjectStore
-
-from typing import Iterator
 
 
 class FeedView:
-    def __init__(self, website: str, object_store: ObjectStore):
+    def __init__(
+        self,
+        website: str,
+        db_session: async_sessionmaker,
+        object_store: ObjectStore
+    ):
         self._website = website
+        self._db_session = db_session
         self._object_store = object_store
 
     async def get_feed(self, request: web.Request) -> web.Response:
-        def generate_rss_feed() -> str:
-            query: Iterator[Video] = Video.collection.order("-created").fetch()
-            with warnings.catch_warnings(
-                    action="ignore",
-                    category=NotSupportedByItunesWarning
-            ):
-                podcast = Podcast(
-                    name="Leonid's Stethoscope",
-                    description="Podcast from Youtube videos",
-                    website=self._website,
-                    explicit=False
+        with warnings.catch_warnings(
+            action="ignore",
+            category=NotSupportedByItunesWarning
+        ):
+            podcast = Podcast(
+                name="Leonid's Stethoscope",
+                description="Podcast from Youtube videos",
+                website=self._website,
+                explicit=False
+            )
+            async with self._db_session() as db:
+                videos = await db.stream_scalars(
+                    select(Video).order_by(Video.created)
                 )
-                for v in query:
+                async for v in videos:
                     episode = podcast.add_episode()
                     episode.id = v.id
                     episode.title = v.title
@@ -45,10 +52,10 @@ class FeedView:
                         duration=timedelta(seconds=v.duration)
                     )
 
-                return podcast.rss_str(minimize=True)
-
-        feed = await asyncio.to_thread(generate_rss_feed)
-        return web.Response(text=feed, content_type="application/rss+xml")
+        return web.Response(
+            text=podcast.rss_str(minimize=True),
+            content_type="application/rss+xml"
+        )
 
     async def get_media_link(self, request: web.Request):
         episode_id: str = request.match_info["episode_id"]

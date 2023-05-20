@@ -1,36 +1,35 @@
 import asyncio
+from datetime import datetime
+from http import HTTPStatus
 
 from aiohttp import web
-from datetime import datetime
-from fireo.utils import utils
-from http import HTTPStatus
 from pytube import YouTube
+from sqlalchemy import delete, desc, select
+from sqlalchemy.ext.asyncio import async_sessionmaker
 
-from firestore import Video
+from db import Video
 from objectstore import ObjectStore
-
-from typing import Dict, List
 
 
 class FilesView:
-    def __init__(self, object_store: ObjectStore):
+    def __init__(
+        self,
+        db_session: async_sessionmaker,
+        object_store: ObjectStore
+    ):
+        self._db_session = db_session
         self._object_store = object_store
 
     async def list_files(self, request: web.Request) -> web.Response:
         # TODO handle next
-        def list_videos() -> List[Dict]:
-            video_ids = request.query.getall("id", [])
+        video_ids = request.query.getall("id", [])
+        async with self._db_session() as db:
             if video_ids:
-                videos = Video.collection.get_all(
-                    [
-                        utils.get_key(Video.collection_name, v)
-                        for v in video_ids
-                    ]
-                )
+                videos = select(Video).where(Video.id.in_(video_ids))
             else:
-                videos = Video.collection.order("-created").fetch(5)
-
-            return [
+                videos = select(Video).order_by(desc(Video.created))
+            videos = await db.stream_scalars(videos)
+            files = [
                 {
                     "id": v.id,
                     "title": v.title,
@@ -38,10 +37,9 @@ class FilesView:
                     "thumbnail": v.thumbnail_url,
                     "duration": v.duration
                 }
-                for v in videos if v
+                async for v in videos
             ]
 
-        files = await asyncio.to_thread(list_videos)
         return web.json_response({"files": files, "next": None})
 
     async def add_file(self, request: web.Request) -> web.Response:
@@ -59,24 +57,31 @@ class FilesView:
                 audio_size=filesize,
                 audio_type=mime_type
             )
-            await asyncio.to_thread(video.save)
+            async with self._db_session.begin() as db:
+                db.add(video)
 
         youtube = YouTube(
             (await request.json())["url"]
         )
-        asyncio.create_task(save_audio(youtube))
+        async with self._db_session() as db:
+            existing_video = await db.get(Video, youtube.video_id)
+        if existing_video:
+            return_status = HTTPStatus.CONFLICT
+        else:
+            asyncio.create_task(save_audio(youtube))
+            return_status = HTTPStatus.ACCEPTED
         return web.json_response(
             {"id": youtube.video_id},
-            status=HTTPStatus.ACCEPTED
+            status=return_status
         )
 
     async def delete_file(self, request: web.Request) -> web.Response:
         file_id = request.match_info["file_id"]
-        await asyncio.gather(
-            self._object_store.delete_audio(file_id),
-            asyncio.to_thread(
-                Video.collection.delete,
-                utils.get_key(Video.collection_name, file_id)
+        async with self._db_session.begin() as db:
+            await asyncio.gather(
+                self._object_store.delete_audio(file_id),
+                db.execute(
+                    delete(Video).where(Video.id == file_id)
+                )
             )
-        )
         return web.json_response({"id": file_id})

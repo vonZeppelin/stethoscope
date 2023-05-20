@@ -6,8 +6,6 @@ WORKDIR /app
 RUN pip install --no-cache-dir --requirement requirements.txt
 
 ENTRYPOINT ["gunicorn", \
-            "--bind=:443", \
-            "--certfile=/etc/letsencrypt/live/lbogdanov.dev/fullchain.pem", \
-            "--keyfile=/etc/letsencrypt/live/lbogdanov.dev/privkey.pem", \
+            "--bind=:80", \
             "--worker-class=aiohttp.GunicornWebWorker", \
             "app:build_app"]

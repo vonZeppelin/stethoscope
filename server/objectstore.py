@@ -1,15 +1,13 @@
 import asyncio
-import janus
+from datetime import datetime, timedelta
+from typing import AsyncIterable, Dict, Optional, Tuple
 
 from aiohttp import ClientSession
 from aiohttp.hdrs import CONTENT_LENGTH, CONTENT_TYPE
-from datetime import timedelta
-from google.cloud.exceptions import NotFound
-from google.cloud.storage import Client, Bucket
-from google.oauth2.service_account import Credentials
+import janus
+import oci
+from oci.object_storage.models import CreatePreauthenticatedRequestDetails
 from pytube import Stream as YoutubeStream, YouTube
-
-from typing import AsyncIterable, Optional, Tuple
 
 
 BUCKET_NAME = "stethoscope-2022"
@@ -29,18 +27,29 @@ class _FakeBuffer:
 
 
 class ObjectStore:
-    def __init__(self, credentials: Credentials):
-        self._object_store = Client(credentials=credentials)
+    def __init__(self, oci_config: Dict[str, str]):
+        self.object_store = oci.object_storage.ObjectStorageClient(oci_config)
+        self.bucket_namespace: str = self.object_store.get_namespace().data
 
     async def save_audio(self, yt: YouTube) -> Tuple[int, str]:
-        audio_stream, object_write_url = await asyncio.gather(
+        audio_stream, object_write_request = await asyncio.gather(
             asyncio.to_thread(lambda: yt.streams.get_audio_only()),
-            asyncio.to_thread(self._get_presign_url, yt.video_id, "PUT")
+            asyncio.to_thread(
+                self.object_store.create_preauthenticated_request,
+                self.bucket_namespace,
+                BUCKET_NAME,
+                CreatePreauthenticatedRequestDetails(
+                    name=yt.video_id,
+                    object_name=yt.video_id,
+                    access_type=CreatePreauthenticatedRequestDetails.ACCESS_TYPE_OBJECT_WRITE,
+                    time_expires=datetime.utcnow() + ONE_DAY
+                )
+            )
         )
 
         async with ClientSession() as http:
             await http.put(
-                object_write_url,
+                self.object_store.base_client.endpoint + object_write_request.data.access_uri,
                 data=self._chunked_stream(audio_stream),
                 headers={
                     CONTENT_LENGTH: str(audio_stream.filesize),
@@ -51,14 +60,31 @@ class ObjectStore:
         return audio_stream.filesize, audio_stream.mime_type
 
     async def delete_audio(self, video_id: str):
-        await asyncio.to_thread(self._delete_blob, video_id)
+        try:
+            await asyncio.to_thread(
+                self.object_store.delete_object,
+                self.bucket_namespace,
+                BUCKET_NAME,
+                video_id
+            )
+        except oci.exceptions.ServiceError as e:
+            if e.status != 404:
+                raise
 
     async def get_audio_url(self, audio_id: str) -> str:
-        object_read_url = await asyncio.to_thread(
-            self._get_presign_url, audio_id, "GET"
+        object_read_request = await asyncio.to_thread(
+            self.object_store.create_preauthenticated_request,
+            self.bucket_namespace,
+            BUCKET_NAME,
+            CreatePreauthenticatedRequestDetails(
+                name=audio_id,
+                object_name=audio_id,
+                access_type=CreatePreauthenticatedRequestDetails.ACCESS_TYPE_OBJECT_READ,
+                time_expires=datetime.utcnow() + ONE_DAY,
+            )
         )
 
-        return object_read_url
+        return self.object_store.base_client.endpoint + object_read_request.data.access_uri
 
     @staticmethod
     async def _chunked_stream(stream: YoutubeStream) -> AsyncIterable[bytes]:
@@ -75,19 +101,3 @@ class ObjectStore:
         await stream_to_buffer_task
         queue.close()
         await queue.wait_closed()
-
-    def _get_presign_url(self, name: str, method: str) -> str:
-        bucket: Bucket = self._object_store.bucket(BUCKET_NAME)
-        blob = bucket.blob(name)
-
-        return blob.generate_signed_url(
-            method=method, version="v4", expiration=ONE_DAY
-        )
-
-    def _delete_blob(self, name: str):
-        bucket: Bucket = self._object_store.bucket(BUCKET_NAME)
-        blob = bucket.blob(name)
-        try:
-            blob.delete()
-        except NotFound:
-            pass
