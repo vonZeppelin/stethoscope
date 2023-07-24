@@ -3,10 +3,11 @@ from pathlib import Path
 
 from sqlalchemy import String, Text
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
-from sqlalchemy.orm import Mapped, declarative_base, mapped_column
+from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 
-Base = declarative_base()
+class Base(DeclarativeBase):
+    pass
 
 
 class Video(Base):
