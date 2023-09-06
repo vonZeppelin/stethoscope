@@ -12,18 +12,7 @@ from pytube import Stream as YoutubeStream, YouTube
 
 BUCKET_NAME = "stethoscope-2022"
 ONE_DAY = timedelta(days=1)
-
-
-class _FakeBuffer:
-    def __init__(self, sync_q: janus.SyncQueue[Optional[bytes]]):
-        self._sync_q = sync_q
-
-    def stream_to_buffer(self, stream: YoutubeStream):
-        stream.stream_to_buffer(self)
-        self._sync_q.put(None)
-
-    def write(self, data: bytes):
-        self._sync_q.put(data)
+ONE_HOUR = timedelta(hours=1)
 
 
 class ObjectStore:
@@ -31,7 +20,7 @@ class ObjectStore:
         self.object_store = oci.object_storage.ObjectStorageClient(oci_config)
         self.bucket_namespace: str = self.object_store.get_namespace().data
 
-    async def save_audio(self, yt: YouTube) -> Tuple[int, str]:
+    async def save_youtube_audio(self, yt: YouTube) -> Tuple[int, str]:
         audio_stream, object_write_request = await asyncio.gather(
             asyncio.to_thread(lambda: yt.streams.get_audio_only()),
             asyncio.to_thread(
@@ -42,14 +31,14 @@ class ObjectStore:
                     name=yt.video_id,
                     object_name=yt.video_id,
                     access_type=CreatePreauthenticatedRequestDetails.ACCESS_TYPE_OBJECT_WRITE,
-                    time_expires=datetime.utcnow() + ONE_DAY
+                    time_expires=datetime.utcnow() + ONE_HOUR
                 )
             )
         )
 
         async with ClientSession() as http:
             await http.put(
-                self.object_store.base_client.endpoint + object_write_request.data.access_uri,
+                object_write_request.data.full_path,
                 data=self._chunked_stream(audio_stream),
                 headers={
                     CONTENT_LENGTH: str(audio_stream.filesize),
@@ -59,40 +48,61 @@ class ObjectStore:
 
         return audio_stream.filesize, audio_stream.mime_type
 
-    async def delete_audio(self, video_id: str):
+    async def save_book_chapter(self, book_id: str, chapter_id: str) -> str:
+        object_write_request = await asyncio.to_thread(
+            self.object_store.create_preauthenticated_request,
+            self.bucket_namespace,
+            BUCKET_NAME,
+            CreatePreauthenticatedRequestDetails(
+                name=chapter_id,
+                object_name=f"{book_id}/{chapter_id}",
+                access_type=CreatePreauthenticatedRequestDetails.ACCESS_TYPE_OBJECT_WRITE,
+                time_expires=datetime.utcnow() + ONE_HOUR
+            )
+        )
+        return object_write_request.data.full_path
+
+    async def delete_object(self, object_id: str):
         try:
             await asyncio.to_thread(
                 self.object_store.delete_object,
                 self.bucket_namespace,
                 BUCKET_NAME,
-                video_id
+                object_id
             )
         except oci.exceptions.ServiceError as e:
             if e.status != 404:
                 raise
 
-    async def get_audio_url(self, audio_id: str) -> str:
+    async def get_object_url(self, object_id: str) -> str:
         object_read_request = await asyncio.to_thread(
             self.object_store.create_preauthenticated_request,
             self.bucket_namespace,
             BUCKET_NAME,
             CreatePreauthenticatedRequestDetails(
-                name=audio_id,
-                object_name=audio_id,
+                name=object_id,
+                object_name=object_id,
                 access_type=CreatePreauthenticatedRequestDetails.ACCESS_TYPE_OBJECT_READ,
-                time_expires=datetime.utcnow() + ONE_DAY,
+                time_expires=datetime.utcnow() + ONE_DAY
             )
         )
 
-        return self.object_store.base_client.endpoint + object_read_request.data.access_uri
+        return object_read_request.data.full_path
 
     @staticmethod
     async def _chunked_stream(stream: YoutubeStream) -> AsyncIterable[bytes]:
-        queue = janus.Queue[Optional[bytes]](maxsize=5)
-        buffer = _FakeBuffer(queue.sync_q)
+        class FakeBuffer:
+            def stream_to_buffer(self):
+                stream.stream_to_buffer(self)
+                queue.sync_q.put(None)
 
+            def write(self, data: bytes):
+                queue.sync_q.put(data)
+
+        queue = janus.Queue[Optional[bytes]](maxsize=5)
+        buffer = FakeBuffer()
         stream_to_buffer_task = asyncio.create_task(
-            asyncio.to_thread(buffer.stream_to_buffer, stream)
+            asyncio.to_thread(buffer.stream_to_buffer)
         )
 
         while chunk := await queue.async_q.get():

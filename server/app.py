@@ -33,8 +33,9 @@ async def build_app():
     feed_view = FeedView(UI_HOST_URL, db_session, object_store)
     files_view = FilesView(db_session, object_store)
 
-    app.router.add_get("/feed", feed_view.get_feed)
-    app.router.add_get("/feed/{episode_id}", feed_view.get_media_link)
+    app.router.add_get("/youtube/feed", feed_view.get_youtube_feed)
+    app.router.add_get("/book/{book_id}/feed", feed_view.get_audiobook_feed)
+    app.router.add_get("/media/{episode_id}", feed_view.get_media_url)
     app.router.add_get("/health", healthcheck)
 
     cors_opts = {
@@ -50,11 +51,23 @@ async def build_app():
         cors_opts
     )
     cors.add(
-        app.router.add_post("/files", files_view.add_file),
+        app.router.add_delete("/files/{file_id}", files_view.delete_file),
         cors_opts
     )
     cors.add(
-        app.router.add_delete("/files/{file_id}", files_view.delete_file),
+        app.router.add_post("/files/youtube/add", files_view.add_youtube),
+        cors_opts
+    )
+    cors.add(
+        app.router.add_post("/files/book/add", files_view.start_book_upload),
+        cors_opts
+    )
+    cors.add(
+        app.router.add_post("/files/book/{book_id}/add_chapter", files_view.upload_book_chapter),
+        cors_opts
+    )
+    cors.add(
+        app.router.add_post("/files/book/{book_id}/complete", files_view.complete_book_upload),
         cors_opts
     )
 
