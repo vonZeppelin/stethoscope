@@ -1,10 +1,9 @@
 import asyncio
 from http import HTTPStatus
+import re
 
 from aiohttp import web
 import nanoid
-from pytube import YouTube
-from pytube.exceptions import RegexMatchError
 from sqlalchemy import desc, func, null, select
 from sqlalchemy.orm import aliased, joinedload
 from sqlalchemy.ext.asyncio import async_sessionmaker
@@ -12,6 +11,9 @@ from sqlalchemy.ext.asyncio import async_sessionmaker
 from db import Catalog
 from objectstore import ObjectStore
 from remotefile import get_file_info
+
+
+YOUTUBE_REGEX = re.compile(r"(?:v=|/)([0-9A-Za-z_-]{11}).*")
 
 
 class FilesView:
@@ -78,36 +80,39 @@ class FilesView:
         return web.json_response({"id": parent_id})
 
     async def add_youtube(self, request: web.Request) -> web.Response:
-        async def save_audio(yt: YouTube) -> None:
-            filesize, mime_type = await self._object_store.save_youtube_audio(yt)
+        async def save_audio() -> None:
+            yt_audio = await self._object_store.save_youtube_audio(
+                youtube_url
+            )
 
             video = Catalog(
-                id=yt.video_id,
-                title=yt.title,
-                description=yt.description,
-                filename=yt.video_id,
-                published=yt.publish_date,
-                duration=yt.length,
-                thumbnail_url=yt.thumbnail_url,
-                audio_size=filesize,
-                audio_type=mime_type
+                id=yt_audio.id,
+                title=yt_audio.title,
+                description=yt_audio.description,
+                filename=yt_audio.id,
+                published=yt_audio.published,
+                duration=yt_audio.duration,
+                thumbnail_url=yt_audio.thumbnail_url,
+                audio_size=yt_audio.size,
+                audio_type=yt_audio.mime_type
             )
             async with self._db_session.begin() as db:
                 db.add(video)
 
-        try:
-            youtube = YouTube((await request.json())["url"])
-        except RegexMatchError:
+        youtube_url = (await request.json())["url"]
+        if video_id := re.search(YOUTUBE_REGEX, youtube_url):
+            video_id = video_id[1]
+        else:
             raise web.HTTPBadRequest(text="Invalid YouTube link")
 
         async with self._db_session() as db:
-            existing_video = await db.get(Catalog, youtube.video_id)
+            existing_video = await db.get(Catalog, video_id)
         if existing_video:
             raise web.HTTPConflict(text="Link already downloaded")
 
-        asyncio.create_task(save_audio(youtube))
+        asyncio.create_task(save_audio())
         return web.json_response(
-            {"id": youtube.video_id, "type": "youtube"},
+            {"id": video_id, "type": "youtube"},
             status=HTTPStatus.ACCEPTED
         )
 

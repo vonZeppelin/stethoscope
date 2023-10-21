@@ -1,13 +1,17 @@
+import aiofiles
+import aiofiles.ospath
 import asyncio
-from datetime import datetime, timedelta
-from typing import AsyncIterable, Dict, Optional, Tuple
+import json
+from dataclasses import dataclass
+from datetime import datetime, timedelta, UTC
+import os
+import tempfile
+from typing import AsyncIterable, Dict
 
 from aiohttp import ClientSession
 from aiohttp.hdrs import CONTENT_LENGTH, CONTENT_TYPE
-import janus
 import oci
 from oci.object_storage.models import CreatePreauthenticatedRequestDetails
-from pytube import Stream as YoutubeStream, YouTube
 
 
 BUCKET_NAME = "stethoscope-2022"
@@ -15,38 +19,82 @@ ONE_DAY = timedelta(days=1)
 ONE_HOUR = timedelta(hours=1)
 
 
+@dataclass
+class YoutubeAudio:
+    id: str
+    title: str
+    description: str
+    duration: int
+    size: int
+    published: datetime
+    thumbnail_url: str
+    mime_type: str
+
+
 class ObjectStore:
     def __init__(self, oci_config: Dict[str, str]):
         self.object_store = oci.object_storage.ObjectStorageClient(oci_config)
         self.bucket_namespace: str = self.object_store.get_namespace().data
 
-    async def save_youtube_audio(self, yt: YouTube) -> Tuple[int, str]:
-        audio_stream, object_write_request = await asyncio.gather(
-            asyncio.to_thread(lambda: yt.streams.get_audio_only()),
-            asyncio.to_thread(
+    async def save_youtube_audio(self, youtube_url: str) -> YoutubeAudio:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            audiofile = os.path.join(tmp_dir, "audiotrack")
+
+            youtube_info_proc, youtube_audio_proc = await asyncio.gather(
+                asyncio.create_subprocess_exec(
+                    "yt-dlp",
+                    "--dump-json",
+                    youtube_url,
+                    stdout=asyncio.subprocess.PIPE
+                ),
+                asyncio.create_subprocess_exec(
+                    "yt-dlp",
+                    "--format",
+                    "ba[ext=m4a]",
+                    "--output",
+                    audiofile,
+                    youtube_url,
+                    stdout=asyncio.subprocess.DEVNULL
+                )
+            )
+            (youtube_info_json, _), _ = await asyncio.gather(
+                youtube_info_proc.communicate(), youtube_audio_proc.wait()
+            )
+            youtube_info = json.loads(youtube_info_json)
+            youtube_audio = YoutubeAudio(
+                id=youtube_info["id"],
+                title=youtube_info["title"],
+                description=youtube_info["description"],
+                duration=youtube_info["duration"],
+                size=await aiofiles.ospath.getsize(audiofile),
+                published=datetime.fromtimestamp(youtube_info["epoch"], UTC),
+                thumbnail_url=youtube_info["thumbnail"],
+                mime_type="audio/mp4"
+            )
+
+            object_write_request = await asyncio.to_thread(
                 self.object_store.create_preauthenticated_request,
                 self.bucket_namespace,
                 BUCKET_NAME,
                 CreatePreauthenticatedRequestDetails(
-                    name=yt.video_id,
-                    object_name=yt.video_id,
+                    name=youtube_audio.id,
+                    object_name=youtube_audio.id,
                     access_type=CreatePreauthenticatedRequestDetails.ACCESS_TYPE_OBJECT_WRITE,
                     time_expires=datetime.utcnow() + ONE_HOUR
                 )
             )
-        )
+            async with ClientSession() as http:
+                await http.put(
+                    object_write_request.data.full_path,
+                    # TODO stream from yt-dlp stdout
+                    data=self._file_sender(audiofile),
+                    headers={
+                        CONTENT_LENGTH: str(youtube_audio.size),
+                        CONTENT_TYPE: youtube_audio.mime_type
+                    }
+                )
 
-        async with ClientSession() as http:
-            await http.put(
-                object_write_request.data.full_path,
-                data=self._chunked_stream(audio_stream),
-                headers={
-                    CONTENT_LENGTH: str(audio_stream.filesize),
-                    CONTENT_TYPE: audio_stream.mime_type
-                }
-            )
-
-        return audio_stream.filesize, audio_stream.mime_type
+        return youtube_audio
 
     async def save_book_chapter(self, book_id: str, chapter_id: str) -> str:
         object_write_request = await asyncio.to_thread(
@@ -90,24 +138,7 @@ class ObjectStore:
         return object_read_request.data.full_path
 
     @staticmethod
-    async def _chunked_stream(stream: YoutubeStream) -> AsyncIterable[bytes]:
-        class FakeBuffer:
-            def stream_to_buffer(self):
-                stream.stream_to_buffer(self)
-                queue.sync_q.put(None)
-
-            def write(self, data: bytes):
-                queue.sync_q.put(data)
-
-        queue = janus.Queue[Optional[bytes]](maxsize=5)
-        buffer = FakeBuffer()
-        stream_to_buffer_task = asyncio.create_task(
-            asyncio.to_thread(buffer.stream_to_buffer)
-        )
-
-        while chunk := await queue.async_q.get():
-            yield chunk
-
-        await stream_to_buffer_task
-        queue.close()
-        await queue.wait_closed()
+    async def _file_sender(file) -> AsyncIterable[bytes]:
+        async with aiofiles.open(file, "rb") as f:
+            while chunk := await f.read(1024 * 1024):
+                yield chunk

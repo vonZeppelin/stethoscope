@@ -1,6 +1,6 @@
 {:source-paths ["src/main" "src/site"]
 
- :dependencies [[lambdaisland/fetch "1.4.80"]
+ :dependencies [[lambdaisland/fetch "1.5.83"]
                 [lambdaisland/uri "1.15.125"]
                 [reagent "1.2.0"]]
 
