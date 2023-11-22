@@ -1,7 +1,7 @@
 {:source-paths ["src/main" "src/site"]
 
  :dependencies [[lambdaisland/fetch "1.5.83"]
-                [lambdaisland/uri "1.15.125"]
+                [lambdaisland/uri "1.19.155"]
                 [reagent "1.2.0"]]
 
  ;; :dev-http {8080 "public"}
