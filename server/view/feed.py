@@ -40,6 +40,7 @@ class FeedView:
         podcast.link(href=self._website, rel="self")
         podcast.title("Leonid's Stethoscope")
         podcast.description("Turns Youtube videos into podcast")
+        podcast.logo(f"{self._website}/logo.jpg")
 
         async with self._db_session() as db:
             items = await db.stream_scalars(
