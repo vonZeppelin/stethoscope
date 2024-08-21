@@ -37,18 +37,23 @@ class ObjectStore:
         self.bucket_namespace: str = self.object_store.get_namespace().data
 
     async def save_youtube_audio(self, youtube_url: str) -> YoutubeAudio:
+        yt_dlp = [
+            "yt-dlp", "--netrc",
+            "--netrc-location", "/etc/stethoscope/",
+            "--cache-dir", "/etc/stethoscope/cache/"
+        ]
         with tempfile.TemporaryDirectory() as tmp_dir:
             audiofile = os.path.join(tmp_dir, "audiotrack")
 
             youtube_info_proc, youtube_audio_proc = await asyncio.gather(
                 asyncio.create_subprocess_exec(
-                    "yt-dlp",
+                    *yt_dlp,
                     "--dump-json",
                     youtube_url,
                     stdout=asyncio.subprocess.PIPE
                 ),
                 asyncio.create_subprocess_exec(
-                    "yt-dlp",
+                    *yt_dlp,
                     "--format",
                     "ba[ext=m4a]",
                     "--output",

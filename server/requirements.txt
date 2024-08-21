@@ -9,3 +9,5 @@ nanoid==2.0.0
 oci==2.132.0
 requests==2.32.3
 sqlalchemy[asyncio]==2.0.32
+yt-dlp[default]==2024.8.6
+yt-dlp-youtube-oauth2@git+https://github.com/coletdjnz/yt-dlp-youtube-oauth2@067085f
