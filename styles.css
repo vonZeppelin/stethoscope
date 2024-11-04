@@ -1,0 +1,30 @@
+#add-youtube {
+  margin: 15px 0;
+  display: flex;
+  justify-content: center;
+}
+
+.file-controls {
+  display: flex;
+  justify-content: space-evenly;
+}
+
+.file-description {
+  white-space: pre-wrap;
+}
+
+.file-duration {
+  text-align: center;
+}
+
+.file-duration .anticon {
+  margin: 5px;
+}
+
+.files-list {
+  margin: 0 2%;
+}
+
+footer {
+  text-align: center;
+}
