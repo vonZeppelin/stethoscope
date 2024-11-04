@@ -38,9 +38,7 @@ class ObjectStore:
 
     async def save_youtube_audio(self, youtube_url: str) -> YoutubeAudio:
         yt_dlp = [
-            "yt-dlp", "--netrc",
-            "--netrc-location", "/etc/stethoscope/",
-            "--cache-dir", "/etc/stethoscope/cache/"
+            "yt-dlp", "--netrc", "--netrc-location", "/etc/stethoscope/"
         ]
         with tempfile.TemporaryDirectory() as tmp_dir:
             audiofile = os.path.join(tmp_dir, "audiotrack")
